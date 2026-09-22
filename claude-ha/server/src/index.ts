@@ -7,9 +7,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { loadConfig, createLogger } from './config.js';
-import { createStaticHandler, ingressPath, isTrustedPeer, sendJson, sendText } from './http.js';
+import { createStaticHandler, ingressPath, isTrustedPeer, readBody, sendJson, sendText } from './http.js';
 import { SessionStore } from './store.js';
 import { AuditLog } from './audit.js';
+import { AttachmentStore, attachmentIds, formatBytes, MAX_UPLOAD_BYTES } from './attachments.js';
 import { GitRepo } from './git.js';
 import { HaClient } from './ha-client.js';
 import { createHaTools, HA_SERVER_NAME, READ_ONLY_TOOLS } from './ha-tools.js';
@@ -28,6 +29,11 @@ const allowAnyPeer = process.env.CLAUDE_HA_ALLOW_ANY_PEER === '1' || !insideAddo
 fs.mkdirSync(config.dataDir, { recursive: true });
 const store = new SessionStore(config.dataDir);
 const audit = new AuditLog(config.dataDir);
+const uploads = new AttachmentStore(config.dataDir);
+void uploads
+  .pruneOrphans(new Set(store.list().flatMap((s) => attachmentIds(store.get(s.id)?.items ?? []))))
+  .then((n) => n && log.info(`removed ${n} unsent uploads`))
+  .catch((err) => log.debug(`upload cleanup failed: ${String(err)}`));
 const git = new GitRepo(config.configDir);
 const ha = new HaClient({ baseUrl: config.supervisorUrl, token: config.supervisorToken });
 
@@ -172,6 +178,57 @@ const server = http.createServer(async (req, res) => {
       sendText(res, 200, await git.diffSince(s.checkpointCommit));
       return;
     }
+    if (url.pathname === '/api/uploads' && req.method === 'POST') {
+      const declared = Number(req.headers['content-length'] ?? 0);
+      if (declared > MAX_UPLOAD_BYTES) {
+        sendJson(res, 413, { error: `File is larger than ${formatBytes(MAX_UPLOAD_BYTES)}.` });
+        req.resume();
+        return;
+      }
+      let body: Buffer;
+      try {
+        body = await readBody(req, MAX_UPLOAD_BYTES);
+      } catch {
+        sendJson(res, 413, { error: `File is larger than ${formatBytes(MAX_UPLOAD_BYTES)}.` });
+        return;
+      }
+      const rawName = String(req.headers['x-file-name'] ?? 'file');
+      let name = rawName;
+      try {
+        name = decodeURIComponent(rawName);
+      } catch {
+        // keep the raw header value
+      }
+      try {
+        sendJson(res, 200, await uploads.save(name, String(req.headers['content-type'] ?? ''), body));
+      } catch (err) {
+        sendJson(res, 400, { error: (err as Error).message });
+      }
+      return;
+    }
+    const uploadMatch = /^\/api\/uploads\/([a-f0-9-]+)$/.exec(url.pathname);
+    if (uploadMatch && (req.method === 'GET' || req.method === 'HEAD')) {
+      const meta = await uploads.get(uploadMatch[1]);
+      const file = meta && uploads.file(meta.id);
+      const stat = file ? await fs.promises.stat(file).catch(() => undefined) : undefined;
+      if (!meta || !file || !stat) {
+        sendText(res, 404, 'Attachment not found');
+        return;
+      }
+      // Only images render inline; anything else downloads, so an uploaded
+      // HTML or SVG file can never run script in the ingress origin.
+      const inline = meta.kind === 'image';
+      res.writeHead(200, {
+        'Content-Type': inline ? meta.mediaType : 'application/octet-stream',
+        'Content-Length': stat.size,
+        'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(meta.name)}`,
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'private, max-age=31536000, immutable',
+      });
+      if (req.method === 'HEAD') res.end();
+      else fs.createReadStream(file).pipe(res);
+      return;
+    }
     if (url.pathname.startsWith('/api/')) {
       sendJson(res, 404, { error: 'Not found' });
       return;
@@ -291,7 +348,8 @@ wss.on('connection', async (ws) => {
           const rt = sessions.get(msg.sessionId);
           if (!rt) throw new Error('Unknown session');
           subscribe(msg.sessionId);
-          await rt.send(msg.text);
+          const attachments = await uploads.prepare(msg.attachments);
+          await rt.send(msg.text ?? '', attachments);
           break;
         }
         case 'interrupt':
@@ -329,7 +387,9 @@ wss.on('connection', async (ws) => {
         case 'delete_session':
           subscriptions.get(msg.sessionId)?.();
           subscriptions.delete(msg.sessionId);
+          const uploaded = attachmentIds(store.get(msg.sessionId)?.items ?? []);
           await sessions.delete(msg.sessionId);
+          await uploads.delete(uploaded).catch(() => undefined);
           broadcast({ type: 'sessions', sessions: store.list() });
           break;
         case 'git_init':

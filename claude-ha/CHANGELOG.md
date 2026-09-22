@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.7
+
+- Attach screenshots and files to a message: paste a screenshot straight into
+  the message box, drag and drop files onto it, or pick them with the paperclip
+  button. Images (PNG, JPEG, GIF, WebP) and PDFs are shown to Claude directly;
+  text files (YAML, logs, JSON, ...) are included as text. Attachments appear
+  as thumbnails in the chat and are removed when the chat is deleted.
+
 ## 0.1.6
 
 - Syntax-highlight YAML (and JSON/INI/etc.) in the file-edit diff view, on top of

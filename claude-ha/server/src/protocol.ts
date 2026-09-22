@@ -27,11 +27,22 @@ export interface SessionSummary {
 
 export type SessionStatus = 'idle' | 'running' | 'waiting_permission' | 'error';
 
+/** A file the user attached to a message, as stored and shown in the transcript. */
+export interface Attachment {
+  id: string;
+  name: string;
+  mediaType: string;
+  size: number;
+  /** How it was handed to Claude: image block, PDF document block or inline text. */
+  kind: 'image' | 'pdf' | 'text';
+}
+
 export interface UserItem {
   kind: 'user';
   id: string;
   ts: number;
   text: string;
+  attachments?: Attachment[];
 }
 
 export interface AssistantTextItem {
@@ -201,7 +212,7 @@ export type ClientMessage =
   | { type: 'subscribe'; sessionId: string }
   | { type: 'unsubscribe'; sessionId: string }
   | { type: 'new_session'; permissionMode?: PermissionModeUi }
-  | { type: 'send'; sessionId: string; text: string }
+  | { type: 'send'; sessionId: string; text: string; /** Ids returned by POST /api/uploads. */ attachments?: string[] }
   | { type: 'interrupt'; sessionId: string }
   | { type: 'set_permission_mode'; sessionId: string; mode: PermissionModeUi }
   | { type: 'set_model'; sessionId: string; model?: string }

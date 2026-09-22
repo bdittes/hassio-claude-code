@@ -28,6 +28,7 @@ import { randomUUID } from 'node:crypto';
 import type { AppConfig, Logger } from './config.js';
 import { applyCredentialEnv, type CredentialEnv } from './auth.js';
 import type { AuditLog } from './audit.js';
+import type { PreparedAttachment } from './attachments.js';
 import type { SessionStore, StoredSession } from './store.js';
 import type {
   QuestionItem,
@@ -299,16 +300,25 @@ export class SessionRuntime {
   // Public actions
   // ---------------------------------------------------------------------------
 
-  async send(text: string): Promise<void> {
+  async send(text: string, attachments: PreparedAttachment[] = []): Promise<void> {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    this.appendItem({ kind: 'user', id: randomUUID(), ts: Date.now(), text: trimmed });
+    if (!trimmed && !attachments.length) return;
+    this.appendItem({
+      kind: 'user',
+      id: randomUUID(),
+      ts: Date.now(),
+      text: trimmed,
+      ...(attachments.length ? { attachments: attachments.map((a) => a.meta) } : {}),
+    });
     this.emitSession();
     this.ensureQuery();
     this.setStatus('running');
+    const content = attachments.length
+      ? [...attachments.map((a) => a.block), ...(trimmed ? [{ type: 'text' as const, text: trimmed }] : [])]
+      : trimmed;
     this.input?.push({
       type: 'user',
-      message: { role: 'user', content: trimmed },
+      message: { role: 'user', content },
       parent_tool_use_id: null,
       session_id: this.session.sdkSessionId ?? '',
     });

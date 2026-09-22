@@ -54,6 +54,12 @@ red/green **diff** before you approve them. When Claude needs to choose between
 options it asks with a short multiple-choice card instead of a wall of text, and
 a summary of its **reasoning** streams into a collapsible "Thinking" panel.
 
+**Screenshots and files**: paste a screenshot into the message box, drag
+files onto it, or use the paperclip button. Claude sees images (PNG, JPEG, GIF,
+WebP, up to 5 MB each) and PDFs (up to 20 MB), and reads text files such as
+YAML, logs and JSON (up to 1 MB). Up to 10 files per message. Uploads are
+stored under the add-on's `/data/uploads` and deleted together with the chat.
+
 ## Configuration options
 
 | Option                        | Default  | Description                                                                                     |

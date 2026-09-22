@@ -7,6 +7,7 @@
 import { reactive, computed } from 'vue';
 import { toast } from 'vue-sonner';
 import type {
+  Attachment,
   ClientMessage,
   GitStatus,
   PermissionDecision,
@@ -243,7 +244,8 @@ export function newSession(mode?: PermissionModeUi): void {
   if (window.innerWidth <= 900) state.sidebarOpen = false;
 }
 
-export function sendMessage(text: string): void {
+export function sendMessage(text: string, attachments: string[] = []): void {
+  const extra = attachments.length ? { attachments } : {};
   if (!state.currentId) {
     pendingNewSession = true;
     send({ type: 'new_session' });
@@ -251,13 +253,36 @@ export function sendMessage(text: string): void {
     const stop = setInterval(() => {
       if (state.currentId) {
         clearInterval(stop);
-        send({ type: 'send', sessionId: state.currentId, text });
+        send({ type: 'send', sessionId: state.currentId, text, ...extra });
       }
     }, 50);
     setTimeout(() => clearInterval(stop), 5000);
     return;
   }
-  send({ type: 'send', sessionId: state.currentId, text });
+  send({ type: 'send', sessionId: state.currentId, text, ...extra });
+}
+
+/** Relative URL of an uploaded attachment (works under the ingress prefix). */
+export function attachmentUrl(id: string): string {
+  return `api/uploads/${encodeURIComponent(id)}`;
+}
+
+/**
+ * Upload one file over plain HTTP. The ingress WebSocket proxy limits message
+ * size, so file contents never travel over the socket; `send` only carries ids.
+ */
+export async function uploadFile(file: File, name = file.name): Promise<Attachment> {
+  const res = await fetch('api/uploads', {
+    method: 'POST',
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+      'X-File-Name': encodeURIComponent(name),
+    },
+    body: file,
+  });
+  const body = (await res.json().catch(() => ({}))) as Partial<Attachment> & { error?: string };
+  if (!res.ok) throw new Error(body.error ?? `Upload failed (${res.status})`);
+  return body as Attachment;
 }
 
 export function interrupt(): void {

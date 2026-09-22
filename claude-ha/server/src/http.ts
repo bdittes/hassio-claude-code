@@ -49,16 +49,21 @@ export function sendText(res: http.ServerResponse, status: number, body: string)
   res.end(body);
 }
 
-export async function readJsonBody<T = unknown>(req: http.IncomingMessage, limit = 1_000_000): Promise<T> {
+export async function readBody(req: http.IncomingMessage, limit = 1_000_000): Promise<Buffer> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     const buf = chunk as Buffer;
     size += buf.length;
-    if (size > limit) throw new Error('Request body too large');
-    chunks.push(buf);
+    // Keep draining past the limit so the client still receives our response.
+    if (size <= limit) chunks.push(buf);
   }
-  const text = Buffer.concat(chunks).toString('utf8');
+  if (size > limit) throw new Error('Request body too large');
+  return Buffer.concat(chunks);
+}
+
+export async function readJsonBody<T = unknown>(req: http.IncomingMessage, limit = 1_000_000): Promise<T> {
+  const text = (await readBody(req, limit)).toString('utf8');
   return text ? (JSON.parse(text) as T) : ({} as T);
 }
 
