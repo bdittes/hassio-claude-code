@@ -29,6 +29,7 @@ import type { AppConfig, Logger } from './config.js';
 import { applyCredentialEnv, type CredentialEnv } from './auth.js';
 import type { AuditLog } from './audit.js';
 import type { PreparedAttachment } from './attachments.js';
+import { isReadOnlyYamlCheck } from './ha-tools.js';
 import type { SessionStore, StoredSession } from './store.js';
 import type {
   QuestionItem,
@@ -532,6 +533,13 @@ export class SessionRuntime {
       return { behavior: 'allow', updatedInput: input };
     }
     if (this.deps.config.autoApproveReadOnly && this.deps.readOnlyTools.has(toolName)) {
+      return { behavior: 'allow', updatedInput: input };
+    }
+    if (
+      this.deps.config.autoApproveReadOnly &&
+      toolName === 'Bash' &&
+      isReadOnlyYamlCheck((input as { command?: unknown }).command, this.deps.config.configDir)
+    ) {
       return { behavior: 'allow', updatedInput: input };
     }
     const requestId = opts.requestId || randomUUID();

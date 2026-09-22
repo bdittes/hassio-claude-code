@@ -7,6 +7,15 @@
   button. Images (PNG, JPEG, GIF, WebP) and PDFs are shown to Claude directly;
   text files (YAML, logs, JSON, ...) are included as text. Attachments appear
   as thumbnails in the chat and are removed when the chat is deleted.
+- Validate YAML before Home Assistant's config check: the image now ships
+  Python, PyYAML and yamllint, plus an `ha-yaml-check` command that parses
+  files like Home Assistant does (understands `!include`, `!include_dir_*`,
+  `!secret`, `!env_var`, `!input`) and reports syntax errors, duplicate keys,
+  missing include targets and unknown `!secret` names with file:line:column,
+  without ever printing secret values. `--lint` adds yamllint style checks
+  with HA-friendly defaults. Claude runs it after every YAML edit; plain
+  validator runs inside /config are auto-approved when
+  `auto_approve_readonly_tools` is on.
 
 ## 0.1.6
 

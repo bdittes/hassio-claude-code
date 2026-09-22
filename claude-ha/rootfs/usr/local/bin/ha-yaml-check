@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+"""Fast, offline YAML check for a Home Assistant configuration directory.
+
+Parses files the way Home Assistant does (PyYAML, YAML 1.1) and understands
+Home Assistant's custom tags, so it catches the errors that break a config
+before Core's own (slower) config check runs:
+
+  * YAML syntax errors, with file:line:column
+  * duplicate keys in the same mapping (PyYAML would silently keep the last)
+  * !include / !include_dir_* targets that do not exist
+  * !secret names missing from secrets.yaml (only key names are read, never values)
+  * unknown ! tags
+
+Usage:
+  ha-yaml-check                  check every YAML file under the current dir
+  ha-yaml-check FILE|DIR ...     check the given files and directories
+  ha-yaml-check --lint ...       also run yamllint (style: indentation, trailing spaces, ...)
+
+Exit status: 0 when no errors were found, 1 otherwise. Warnings do not fail.
+This does not replace Home Assistant's config check, which also validates the
+schema of each integration: run that too.
+"""
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover
+    sys.stderr.write("ha-yaml-check: PyYAML is not installed\n")
+    sys.exit(2)
+
+try:
+    SafeLoader = yaml.CSafeLoader  # type: ignore[attr-defined]
+except AttributeError:  # pragma: no cover
+    SafeLoader = yaml.SafeLoader
+
+YAML_EXT = (".yaml", ".yml")
+# Never parsed or printed: their content is sensitive or managed by HA.
+PROTECTED_NAMES = {"secrets.yaml", "secrets.yml"}
+SKIP_DIRS = {".storage", ".git", ".cloud", "deps", "tts", "node_modules", "__pycache__", ".venv", "venv"}
+
+INCLUDE_FILE_TAGS = {"!include"}
+INCLUDE_DIR_TAGS = {"!include_dir_list", "!include_dir_named", "!include_dir_merge_list", "!include_dir_merge_named"}
+
+
+class Issue:
+    def __init__(self, path: str, line: int, col: int, level: str, message: str):
+        self.path, self.line, self.col, self.level, self.message = path, line, col, level, message
+
+    def __str__(self) -> str:
+        return f"{self.path}:{self.line}:{self.col}: {self.level}: {self.message}"
+
+
+def rel(path: str) -> str:
+    r = os.path.relpath(path)
+    return path if r.startswith("..") else r
+
+
+def find_config_root(start: str) -> str:
+    """The directory holding configuration.yaml, else the current directory."""
+    d = os.path.abspath(start if os.path.isdir(start) else os.path.dirname(start))
+    while True:
+        if os.path.isfile(os.path.join(d, "configuration.yaml")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            return os.getcwd()
+        d = parent
+
+
+_secret_cache: dict[str, set[str] | None] = {}
+
+
+def secret_keys(path: str) -> set[str] | None:
+    """Top-level key names of a secrets.yaml. Values are never kept or printed."""
+    if path not in _secret_cache:
+        keys: set[str] | None = None
+        try:
+            with open(path, encoding="utf-8") as fh:
+                node = yaml.compose(fh, Loader=SafeLoader)
+            if isinstance(node, yaml.MappingNode):
+                keys = {k.value for k, _ in node.value if isinstance(k, yaml.ScalarNode)}
+            else:
+                keys = set()
+        except FileNotFoundError:
+            keys = None
+        except Exception:  # noqa: BLE001 - a broken secrets file must not leak its content
+            keys = set()
+        _secret_cache[path] = keys
+    return _secret_cache[path]
+
+
+def check_secret(name: str, file_dir: str, root: str) -> bool | None:
+    """True if found, False if missing, None if there is no secrets.yaml at all.
+
+    Like Home Assistant, look in the file's directory and its parents up to the
+    config root.
+    """
+    d = os.path.abspath(file_dir)
+    root = os.path.abspath(root)
+    seen_any = False
+    while True:
+        keys = secret_keys(os.path.join(d, "secrets.yaml"))
+        if keys is not None:
+            seen_any = True
+            if name in keys:
+                return True
+        if d == root or os.path.dirname(d) == d or not d.startswith(root):
+            break
+        d = os.path.dirname(d)
+    return False if seen_any else None
+
+
+def check_file(path: str, root: str) -> list[Issue]:
+    issues: list[Issue] = []
+    shown = rel(path)
+    file_dir = os.path.dirname(os.path.abspath(path))
+
+    def add(node_or_mark, level: str, message: str) -> None:
+        mark = getattr(node_or_mark, "start_mark", node_or_mark)
+        line = getattr(mark, "line", -1) + 1
+        col = getattr(mark, "column", -1) + 1
+        issues.append(Issue(shown, max(line, 1), max(col, 1), level, message))
+
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except UnicodeDecodeError as err:
+        return [Issue(shown, 1, 1, "error", f"not valid UTF-8 ({err.reason} at byte {err.start})")]
+    except OSError as err:
+        return [Issue(shown, 1, 1, "error", f"cannot read file: {err.strerror}")]
+
+    if "\t" in text:
+        for i, line in enumerate(text.splitlines(), 1):
+            indent = line[: len(line) - len(line.lstrip())]
+            if "\t" in indent:
+                issues.append(Issue(shown, i, indent.index("\t") + 1, "error", "tab used for indentation (YAML only allows spaces)"))
+                break
+
+    try:
+        docs = list(yaml.compose_all(text, Loader=SafeLoader))
+    except yaml.MarkedYAMLError as err:
+        mark = err.problem_mark or err.context_mark
+        msg = err.problem or str(err).splitlines()[0]
+        if err.context:
+            msg = f"{err.context}: {msg}"
+        # A tab in the indentation was already reported above, more clearly.
+        if not (issues and mark is not None and issues[0].line == mark.line + 1 and "\\t" in msg):
+            add(mark, "error", msg)
+        return issues
+    except yaml.YAMLError as err:
+        issues.append(Issue(shown, 1, 1, "error", str(err).splitlines()[0]))
+        return issues
+
+    if len(docs) > 1:
+        issues.append(Issue(shown, 1, 1, "warning", "file contains several YAML documents; Home Assistant only reads the first"))
+
+    def walk(node) -> None:
+        tag = node.tag or ""
+        if tag.startswith("!") and not tag.startswith("!!"):
+            value = node.value if isinstance(node, yaml.ScalarNode) else None
+            if tag in INCLUDE_FILE_TAGS:
+                if not value:
+                    add(node, "error", f"{tag} needs a file name")
+                else:
+                    target = os.path.join(file_dir, value)
+                    if not os.path.isfile(target):
+                        add(node, "error", f"{tag} {value}: file not found")
+            elif tag in INCLUDE_DIR_TAGS:
+                if not value:
+                    add(node, "error", f"{tag} needs a directory name")
+                else:
+                    target = os.path.join(file_dir, value)
+                    if not os.path.isdir(target):
+                        add(node, "error", f"{tag} {value}: directory not found")
+            elif tag == "!secret":
+                if not value:
+                    add(node, "error", "!secret needs a key name")
+                else:
+                    found = check_secret(value, file_dir, root)
+                    if found is False:
+                        add(node, "error", f"!secret {value}: key not found in secrets.yaml")
+                    elif found is None:
+                        add(node, "warning", f"!secret {value}: no secrets.yaml found")
+            elif tag == "!env_var":
+                if not value or not value.split()[0]:
+                    add(node, "error", "!env_var needs a variable name")
+            elif tag == "!input":
+                pass  # blueprint input, resolved when the blueprint is used
+            else:
+                add(node, "error", f"unknown tag {tag}")
+        if isinstance(node, yaml.MappingNode):
+            seen: dict[object, yaml.Node] = {}
+            for key, value in node.value:
+                if isinstance(key, yaml.ScalarNode) and key.tag != "tag:yaml.org,2002:merge":
+                    ident = (key.tag, key.value)
+                    if ident in seen:
+                        first = seen[ident].start_mark.line + 1
+                        add(key, "error", f"duplicate key '{key.value}' (first defined on line {first})")
+                    else:
+                        seen[ident] = key
+                walk(key)
+                walk(value)
+        elif isinstance(node, yaml.SequenceNode):
+            for item in node.value:
+                walk(item)
+
+    for doc in docs:
+        if doc is not None:
+            walk(doc)
+    return issues
+
+
+def collect(paths: list[str]) -> tuple[list[str], list[str]]:
+    files: list[str] = []
+    skipped: list[str] = []
+    for p in paths:
+        if os.path.isdir(p):
+            for dirpath, dirnames, filenames in os.walk(p):
+                dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.startswith("."))
+                for name in sorted(filenames):
+                    if not name.endswith(YAML_EXT):
+                        continue
+                    if name in PROTECTED_NAMES:
+                        continue
+                    files.append(os.path.join(dirpath, name))
+        elif os.path.basename(p) in PROTECTED_NAMES or f"{os.sep}.storage{os.sep}" in os.path.abspath(p):
+            skipped.append(p)
+        elif os.path.isfile(p):
+            files.append(p)
+        else:
+            files.append(p)  # reported as unreadable
+    return files, skipped
+
+
+def run_yamllint(files: list[str]) -> int:
+    exe = shutil.which("yamllint")
+    if not exe:
+        print("ha-yaml-check: yamllint is not installed, skipping --lint", file=sys.stderr)
+        return 0
+    if not files:
+        return 0
+    proc = subprocess.run([exe, "-f", "parsable", *files], check=False)
+    return proc.returncode
+
+
+def main(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="ha-yaml-check", description=__doc__.split("\n\n")[0])
+    ap.add_argument("paths", nargs="*", help="files or directories (default: current directory)")
+    ap.add_argument("--lint", action="store_true", help="also run yamllint for style problems")
+    ap.add_argument("-q", "--quiet", action="store_true", help="only print problems")
+    args = ap.parse_args(argv)
+
+    paths = args.paths or ["."]
+    root = find_config_root(paths[0])
+    files, skipped = collect(paths)
+    for p in skipped:
+        print(f"{rel(p)}: skipped (protected file)", file=sys.stderr)
+
+    errors = warnings = 0
+    for f in files:
+        for issue in check_file(f, root):
+            print(issue)
+            if issue.level == "error":
+                errors += 1
+            else:
+                warnings += 1
+
+    lint_status = run_yamllint(files) if args.lint else 0
+
+    if not args.quiet:
+        summary = f"{len(files)} file(s) checked: {errors} error(s), {warnings} warning(s)"
+        if args.lint:
+            summary += ", yamllint " + ("clean" if lint_status == 0 else "reported problems (see above)")
+        print(summary)
+    return 1 if errors or lint_status != 0 else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

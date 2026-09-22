@@ -70,13 +70,19 @@ stored under the add-on's `/data/uploads` and deleted together with the chat.
 | `model`                       | —        | Optional default model id/alias (e.g. `opus`, `sonnet`). Switchable per chat.                    |
 | `anthropic_base_url`          | —        | Optional. Route requests through an Anthropic-compatible gateway.                               |
 | `log_level`                   | `info`   | `debug`, `info`, `warning`, `error`.                                                            |
-| `auto_approve_readonly_tools` | `true`   | Run read-only Home Assistant tools (states, services, areas, logs, templates) without a prompt. |
+| `auto_approve_readonly_tools` | `true`   | Run read-only Home Assistant tools (states, services, areas, logs, templates) and the offline YAML check without a prompt. |
 
 ## Safety
 
 - **Secrets guard** — `secrets.yaml`, the auth store, the add-on's own `/data`
   (which holds your token) and credential environment variables are blocked from
   every tool. Claude can see secret *names* but never their values.
+- **YAML check** — after editing, Claude runs `ha-yaml-check` on the changed
+  files: a fast offline check that understands `!include`, `!secret` and the
+  other Home Assistant tags and reports syntax errors, duplicate keys, missing
+  include targets and unknown secret names with line numbers (never secret
+  values). `yamllint` is also installed; put a `.yamllint` in `/config` to use
+  your own rules. Home Assistant's own config check still runs afterwards.
 - **Config check** — `Reload` and `Restart Core` run a configuration check first
   and refuse if it fails.
 - **Git checkpoint** — before its first edit in a session, the add-on commits a

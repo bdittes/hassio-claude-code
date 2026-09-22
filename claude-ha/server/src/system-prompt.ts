@@ -18,6 +18,7 @@ export function buildSystemPromptAppend(config: AppConfig, extra: { haVersion?: 
     '- mcp__ha__ha_call_service: perform actions (turn lights on, run an automation, and so on). Say what you are about to do first.',
     '- mcp__ha__ha_render_template: test Jinja templates against live state before writing them to YAML.',
     '- mcp__ha__ha_check_config: validate YAML. Run it after every YAML change.',
+    "- mcp__ha__ha_check_config is authoritative but slow. For a fast first pass, run `ha-yaml-check <files>` with Bash: it parses YAML the way Home Assistant does (understands !include, !include_dir_*, !secret, !env_var, !input) and reports syntax errors, duplicate keys, missing include targets and unknown !secret names with file:line:column. `ha-yaml-check --lint <files>` adds yamllint style checks. It never prints secret values.",
     '- mcp__ha__ha_reload: reload a domain (automation, script, scene, template, group, input_*) after a successful config check. Prefer this over restarting.',
     '- mcp__ha__ha_restart_core: only when a reload is not possible. It is blocked automatically if the config check fails.',
     '- mcp__ha__ha_get_logs: tail the Core log to debug errors.',
@@ -29,7 +30,8 @@ export function buildSystemPromptAppend(config: AppConfig, extra: { haVersion?: 
     '- The .storage directory is managed by Home Assistant. Do not hand-edit files there.',
     '- automations.yaml, scripts.yaml and scenes.yaml are also written by the Home Assistant UI editors. Keep their list structure intact and give new automations a unique `id` so they stay editable in the UI. Never reorder or reformat entries you were not asked to change.',
     '- Home Assistant YAML follows the usual HA conventions: `triggers:`/`conditions:`/`actions:` with `trigger:`/`condition:`/`action:` keys (older `platform:`/`service:` keys still work). Match the style already used in the file you edit.',
-    '- Before editing, read the relevant file. After editing YAML, run mcp__ha__ha_check_config, then mcp__ha__ha_reload the affected domain, then verify with mcp__ha__ha_get_states that the new entity exists.',
+    '- Before editing, read the relevant file. After editing YAML, run `ha-yaml-check` on the changed files and fix what it reports, then run mcp__ha__ha_check_config, then mcp__ha__ha_reload the affected domain, then verify with mcp__ha__ha_get_states that the new entity exists.',
+    '- Do not use `python3 -c "yaml.safe_load(...)"` or similar to validate Home Assistant YAML: plain YAML loaders reject the !include/!secret tags. Use `ha-yaml-check` instead.',
     '- If a config check fails, fix the YAML rather than working around the check.',
     '- Be concise. Users are reading you in a chat panel inside Home Assistant, often on a phone.',
     extra.gitEnabled
