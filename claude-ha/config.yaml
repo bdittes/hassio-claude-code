@@ -1,7 +1,7 @@
 # Home Assistant add-on manifest.
 # Reference: https://developers.home-assistant.io/docs/apps/configuration
 name: Claude for Home Assistant
-version: 0.1.7
+version: 0.1.8
 slug: claude_ha
 description: Chat with Claude to read, edit and validate your Home Assistant configuration
 url: https://github.com/tormjens/hassio-claude-code
@@ -56,3 +56,7 @@ schema:
   anthropic_base_url: url?
   log_level: list(debug|info|warning|error)
   auto_approve_readonly_tools: bool
+  # Long-lived access token for dashboard screenshots (optional).
+  dashboard_token: password?
+  # Override for where the add-on reaches the frontend; derived automatically.
+  frontend_url: url?

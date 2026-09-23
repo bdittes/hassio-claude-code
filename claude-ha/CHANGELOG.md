@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.8
+
+- Claude can look at your dashboards. A new `ha_screenshot` tool opens a
+  frontend page (for example `/lovelace/kitchen`) in a headless browser inside
+  the add-on and hands Claude a screenshot, together with the exact error
+  behind every error card ("Custom element doesn't exist: button-card",
+  "Entity not found: light.x", with the card and entity it belongs to).
+  Claude uses it to verify dashboard changes, on desktop and phone sizes, in
+  light or dark mode. Screenshots also appear in the chat.
+- Opt-in: create a long-lived access token in your Home Assistant profile and
+  paste it into the new "Dashboard access token" option. The token stays in
+  the add-on server process; Claude only sees the screenshots.
+- Chromium starts only when a screenshot is taken and exits after 90 seconds
+  idle, so it uses no memory the rest of the time. The image is larger now
+  because it includes Chromium.
+
 ## 0.1.7
 
 - Attach screenshots and files to a message: paste a screenshot straight into

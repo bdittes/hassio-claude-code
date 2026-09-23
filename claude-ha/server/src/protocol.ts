@@ -77,6 +77,8 @@ export interface ToolUseItem {
   denyReason?: string;
   /** Hidden from the transcript (e.g. AskUserQuestion, rendered as a question card). */
   hidden?: boolean;
+  /** Images the tool returned (dashboard screenshots), served like attachments. */
+  images?: Attachment[];
 }
 
 export interface ResultItem {

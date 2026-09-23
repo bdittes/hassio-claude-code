@@ -10,6 +10,7 @@ import { loadConfig, createLogger } from './config.js';
 import { createStaticHandler, ingressPath, isTrustedPeer, readBody, sendJson, sendText } from './http.js';
 import { SessionStore } from './store.js';
 import { AuditLog } from './audit.js';
+import { DashboardBrowser, findChromium } from './screenshot.js';
 import { AttachmentStore, attachmentIds, formatBytes, MAX_UPLOAD_BYTES } from './attachments.js';
 import { GitRepo } from './git.js';
 import { HaClient } from './ha-client.js';
@@ -39,6 +40,9 @@ const ha = new HaClient({ baseUrl: config.supervisorUrl, token: config.superviso
 
 let haVersion: string | undefined;
 let gitEnabled = false;
+// Where the headless browser reaches the frontend from inside the add-on.
+// The Supervisor's core info says whether Core serves TLS and on which port.
+let frontendUrl = config.frontendUrl || 'http://homeassistant:8123';
 try {
   gitEnabled = await git.isRepo();
 } catch {
@@ -48,6 +52,10 @@ if (ha.configured) {
   try {
     const info = await ha.coreInfo();
     haVersion = typeof info.version === 'string' ? info.version : undefined;
+    if (!config.frontendUrl) {
+      const port = typeof info.port === 'number' ? info.port : 8123;
+      frontendUrl = `${info.ssl ? 'https' : 'http'}://homeassistant:${port}`;
+    }
     log.info(`Home Assistant Core ${haVersion ?? '(unknown version)'} reachable via Supervisor`);
   } catch (err) {
     log.warning(`Supervisor API not reachable yet: ${(err as Error).message}`);
@@ -101,15 +109,21 @@ function authStatus(): AuthStatus {
   return { method: config.authMethod, configured: credentialsConfigured(authConfig) };
 }
 
+const browser = new DashboardBrowser({ frontendUrl: () => frontendUrl, token: config.dashboardToken, log });
+if (browser.configured) {
+  log.info(`dashboard screenshots enabled (${frontendUrl}${findChromium() ? '' : ', but Chromium was not found'})`);
+}
+
 const sessions = new SessionManager({
   config,
   store,
   log,
   audit,
-  mcpServersFactory: () => ({ [HA_SERVER_NAME]: createHaTools({ ha, configDir: config.configDir }) }),
+  mcpServersFactory: () => ({ [HA_SERVER_NAME]: createHaTools({ ha, configDir: config.configDir, browser }) }),
+  uploads,
   readOnlyTools: READ_ONLY_TOOLS,
   hooksFactory: createHooksFactory({ ha, git, audit, store, log, configDir: config.configDir, dataDir: config.dataDir }),
-  systemPromptAppend: buildSystemPromptAppend(config, { haVersion, gitEnabled }),
+  systemPromptAppend: buildSystemPromptAppend(config, { haVersion, gitEnabled, screenshots: browser.configured }),
   credentialEnv,
   onModels,
 });
@@ -156,6 +170,7 @@ const server = http.createServer(async (req, res) => {
         hasApiKey: hasCredentials(),
         auth: authStatus(),
         supervisor: ha.configured,
+        screenshots: browser.configured,
       });
       return;
     }
@@ -459,6 +474,7 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     log.info(`received ${sig}, shutting down`);
     setTimeout(() => process.exit(0), 5000).unref();
     await sessions.closeAll().catch(() => undefined);
+    await browser.close().catch(() => undefined);
     await store.flushAll().catch(() => undefined);
     server.close(() => process.exit(0));
   });

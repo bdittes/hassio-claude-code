@@ -34,7 +34,14 @@ export interface AppConfig {
   supervisorToken: string;
   supervisorUrl: string;
   autoApproveReadOnly: boolean;
-  /** Extra directory the agent may access read-only (ssl certificates). */
+  /**
+   * Long-lived access token for dashboard screenshots. Read straight from
+   * /data/options.json, never from the environment, so it cannot leak into
+   * the model's shell through an inherited variable.
+   */
+  dashboardToken: string;
+  /** Frontend base URL override; derived from the Supervisor's core info when empty. */
+  frontendUrl: string;
   version: string;
 }
 
@@ -46,6 +53,15 @@ function readVersion(): string {
     return pkg.version ?? '0.0.0';
   } catch {
     return '0.0.0';
+  }
+}
+
+/** The add-on options as the Supervisor wrote them, or {} outside Home Assistant. */
+function readOptions(dataDir: string): Record<string, unknown> {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(dataDir, 'options.json'), 'utf8')) as Record<string, unknown>;
+  } catch {
+    return {};
   }
 }
 
@@ -63,6 +79,9 @@ export function loadConfig(): AppConfig {
   const logLevel = (['debug', 'info', 'warning', 'error'].includes(logLevelRaw)
     ? logLevelRaw
     : 'info') as AppConfig['logLevel'];
+
+  const options = readOptions(dataDir);
+  const optString = (key: string) => (typeof options[key] === 'string' ? (options[key] as string).trim() : '');
 
   const oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN ?? '';
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY ?? '';
@@ -90,6 +109,10 @@ export function loadConfig(): AppConfig {
     supervisorToken: process.env.SUPERVISOR_TOKEN ?? '',
     supervisorUrl: process.env.SUPERVISOR_URL ?? 'http://supervisor',
     autoApproveReadOnly: envBool('CLAUDE_HA_AUTO_APPROVE_READONLY', true),
+    // CLAUDE_HA_DASHBOARD_TOKEN is only for local development; the agent's
+    // subprocess env drops it (see agent.ts).
+    dashboardToken: optString('dashboard_token') || process.env.CLAUDE_HA_DASHBOARD_TOKEN || '',
+    frontendUrl: (optString('frontend_url') || process.env.CLAUDE_HA_FRONTEND_URL || '').replace(/\/+$/, ''),
     version: readVersion(),
   };
 }

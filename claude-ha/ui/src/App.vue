@@ -587,6 +587,19 @@ connect();
                     {{ item.status }}
                   </Badge>
                 </CollapsibleTrigger>
+                <div v-if="item.images?.length" class="flex flex-wrap gap-2 px-3 pb-3">
+                  <a
+                    v-for="img in item.images"
+                    :key="img.id"
+                    :href="attachmentUrl(img.id)"
+                    target="_blank"
+                    rel="noopener"
+                    class="block overflow-hidden rounded-lg border bg-background"
+                    :title="img.name"
+                  >
+                    <img :src="attachmentUrl(img.id)" :alt="img.name" class="max-h-96 w-auto max-w-full object-contain" loading="lazy" />
+                  </a>
+                </div>
                 <CollapsibleContent class="space-y-2 px-3 pb-3 text-xs">
                   <pre class="max-h-64 overflow-auto rounded-lg bg-background p-2.5">{{ fmtInput(item.input, item.inputPartial) }}</pre>
                   <pre v-if="item.result" class="max-h-64 overflow-auto rounded-lg bg-background p-2.5">{{ item.result }}</pre>

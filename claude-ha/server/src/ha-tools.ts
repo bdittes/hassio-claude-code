@@ -15,6 +15,7 @@ import { z } from 'zod';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { HaClient, HaState } from './ha-client.js';
+import { MAX_HEIGHT, MAX_WIDTH, MIN_WIDTH, type DashboardBrowser } from './screenshot.js';
 
 export const HA_SERVER_NAME = 'ha';
 
@@ -31,6 +32,7 @@ const READ_ONLY_TOOL_NAMES = [
   'ha_get_areas_devices',
   'ha_render_template',
   'ha_list_secret_keys',
+  'ha_screenshot',
 ] as const;
 
 export const WRITE_TOOL_NAMES = ['ha_call_service', 'ha_reload', 'ha_restart_core'] as const;
@@ -100,9 +102,20 @@ const writes = { readOnlyHint: false, destructiveHint: true, openWorldHint: fals
 export interface HaToolsOptions {
   ha: HaClient;
   configDir: string;
+  /** Headless browser for ha_screenshot. */
+  browser?: DashboardBrowser;
 }
 
-export function createHaTools({ ha, configDir }: HaToolsOptions): McpSdkServerConfigWithInstance {
+const SCREENSHOT_SETUP =
+  'Dashboard screenshots are not set up. Ask the user to create a long-lived access token (Home Assistant: profile picture > Security > Long-lived access tokens > Create token), paste it into the add-on option "Dashboard access token" (dashboard_token) and restart the add-on.';
+
+const DEVICE_SIZES = {
+  desktop: { width: 1280, height: 900 },
+  tablet: { width: 820, height: 1180 },
+  mobile: { width: 390, height: 844 },
+} as const;
+
+export function createHaTools({ ha, configDir, browser }: HaToolsOptions): McpSdkServerConfigWithInstance {
   const getStates = tool(
     'ha_get_states',
     'Get current entity states and attributes from Home Assistant. Filter by a full entity_id (for example light.kitchen) or by domain (for example automation). Returns compact records unless full=true. Use search to keep results small: it matches entity_id and friendly_name case-insensitively.',
@@ -391,6 +404,47 @@ export function createHaTools({ ha, configDir }: HaToolsOptions): McpSdkServerCo
     { annotations: { ...readOnly, title: 'List secret keys' } },
   );
 
+  const screenshot = tool(
+    'ha_screenshot',
+    'Take a screenshot of a Home Assistant frontend page (a dashboard view such as /lovelace/0 or /lovelace/kitchen, /dashboard-energy, /map, /history, ...) and look at it. Use it to verify dashboard and card changes after a reload: check that cards render, show the right entities and values, and that the layout works. Also returns the text of error cards ("Custom element doesn\'t exist", "Entity not available", ...) and browser console errors. Dashboards in storage mode update without a reload; YAML dashboards need the page reloaded, which each screenshot does. Take mobile screenshots too when layout matters: most users view dashboards on a phone.',
+    {
+      path: z.string().optional().describe('Frontend path starting with /, default /lovelace/0 (the first view of the default dashboard)'),
+      device: z.enum(['desktop', 'tablet', 'mobile']).optional().describe('Viewport preset, default desktop (1280x900)'),
+      width: z.number().int().min(MIN_WIDTH).max(MAX_WIDTH).optional().describe('Viewport width in px, overrides device'),
+      height: z.number().int().min(240).max(MAX_HEIGHT).optional().describe('Viewport height in px; use a tall one (e.g. 2400) to capture a long view'),
+      dark: z.boolean().optional().describe('Render in dark mode'),
+      wait_ms: z.number().int().min(0).max(15000).optional().describe('Extra wait after load for slow cards (camera, graphs), default 1500'),
+    },
+    async (args) => {
+      if (!browser?.configured) return error(SCREENSHOT_SETUP);
+      try {
+        const size = DEVICE_SIZES[args.device ?? 'desktop'];
+        const shot = await browser.screenshot({
+          path: args.path || '/lovelace/0',
+          width: args.width ?? size.width,
+          height: args.height ?? size.height,
+          dark: args.dark,
+          waitMs: args.wait_ms,
+        });
+        const summary = {
+          url: shot.url,
+          title: shot.title,
+          card_errors: shot.cardErrors,
+          console_errors: shot.consoleErrors,
+        };
+        return {
+          content: [
+            { type: 'image', data: shot.image.toString('base64'), mimeType: shot.mimeType },
+            { type: 'text', text: JSON.stringify(summary, null, 2) },
+          ],
+        };
+      } catch (err) {
+        return error(`ha_screenshot failed: ${errMessage(err)}`);
+      }
+    },
+    { annotations: { ...readOnly, title: 'Screenshot dashboard' } },
+  );
+
   return createSdkMcpServer({
     name: HA_SERVER_NAME,
     version: '0.1.0',
@@ -409,6 +463,7 @@ export function createHaTools({ ha, configDir }: HaToolsOptions): McpSdkServerCo
       getAreasDevices,
       renderTemplate,
       listSecretKeys,
+      screenshot,
     ],
   });
 }

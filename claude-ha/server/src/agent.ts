@@ -28,10 +28,11 @@ import { randomUUID } from 'node:crypto';
 import type { AppConfig, Logger } from './config.js';
 import { applyCredentialEnv, type CredentialEnv } from './auth.js';
 import type { AuditLog } from './audit.js';
-import type { PreparedAttachment } from './attachments.js';
+import type { AttachmentStore, PreparedAttachment } from './attachments.js';
 import { isReadOnlyYamlCheck } from './ha-tools.js';
 import type { SessionStore, StoredSession } from './store.js';
 import type {
+  Attachment,
   QuestionItem,
   QuestionRequest,
   AssistantTextItem,
@@ -72,6 +73,8 @@ export interface AgentDeps {
   credentialEnv: CredentialEnv;
   /** Called when the SDK reports the available models (from the init message). */
   onModels?: (models: ModelInfo[]) => void;
+  /** Where images returned by tools are kept so the transcript can show them. */
+  uploads?: AttachmentStore;
 }
 
 const ASK_USER_QUESTION = 'AskUserQuestion';
@@ -448,6 +451,8 @@ export class SessionRuntime {
     // holds the token. Removing it prevents a Bash command from reading it and
     // calling the Supervisor API directly, bypassing the tool guards.
     delete env.SUPERVISOR_TOKEN;
+    // Same for the dashboard screenshot token (only ever set in development).
+    delete env.CLAUDE_HA_DASHBOARD_TOKEN;
     return env;
   }
 
@@ -757,6 +762,8 @@ export class SessionRuntime {
       const item = this.toolItems.get(block.tool_use_id);
       if (!item) continue;
       const text = toolResultText(block.content);
+      const images = this.saveToolImages(item, block.content);
+      if (images.length) item.images = [...(item.images ?? []), ...images];
       if (item.status === 'denied') {
         item.result = text;
       } else {
@@ -770,6 +777,25 @@ export class SessionRuntime {
       }
       this.updateItem(item);
     }
+  }
+
+  /** Keep image blocks of a tool result (dashboard screenshots) for the transcript. */
+  private saveToolImages(item: ToolUseItem, content: unknown): Attachment[] {
+    const uploads = this.deps.uploads;
+    if (!uploads || !Array.isArray(content)) return [];
+    const out: Attachment[] = [];
+    for (const c of content as Array<{ type?: string; source?: { type?: string; media_type?: string; data?: string } }>) {
+      if (c?.type !== 'image' || c.source?.type !== 'base64' || !c.source.data) continue;
+      const mediaType = c.source.media_type ?? 'image/png';
+      const ext = mediaType === 'image/jpeg' ? 'jpg' : mediaType.split('/')[1] ?? 'png';
+      const base = item.name.replace(/^mcp__\w+__/, '').replace(/^ha_/, '');
+      try {
+        out.push(uploads.saveGenerated(`${base}-${out.length + 1}.${ext}`, mediaType, Buffer.from(c.source.data, 'base64')));
+      } catch (err) {
+        this.deps.log.debug(`could not keep tool image: ${String(err)}`);
+      }
+    }
+    return out;
   }
 
   private handleResult(message: Extract<SDKMessage, { type: 'result' }>): void {

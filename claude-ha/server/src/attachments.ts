@@ -131,6 +131,15 @@ export class AttachmentStore {
     return meta;
   }
 
+  /** Store an image a tool produced (synchronously: called from the SDK message loop). */
+  saveGenerated(name: string, mediaType: string, bytes: Buffer): Attachment {
+    const meta = validateUpload(name, mediaType, bytes);
+    const file = this.file(meta.id)!;
+    fs.writeFileSync(file, bytes);
+    fs.writeFileSync(`${file}.json`, JSON.stringify(meta));
+    return meta;
+  }
+
   async get(id: string): Promise<Attachment | undefined> {
     const file = this.file(id);
     if (!file) return undefined;
@@ -182,7 +191,9 @@ export class AttachmentStore {
   }
 }
 
-/** Attachment ids referenced by a session's transcript. */
-export function attachmentIds(items: Array<{ kind: string; attachments?: Attachment[] }>): string[] {
-  return items.flatMap((i) => (i.kind === 'user' ? (i.attachments ?? []).map((a) => a.id) : []));
+/** Attachment and tool-image ids referenced by a session's transcript. */
+export function attachmentIds(items: Array<{ kind: string; attachments?: Attachment[]; images?: Attachment[] }>): string[] {
+  return items.flatMap((i) =>
+    i.kind === 'user' ? (i.attachments ?? []).map((a) => a.id) : i.kind === 'tool_use' ? (i.images ?? []).map((a) => a.id) : [],
+  );
 }

@@ -60,6 +60,22 @@ WebP, up to 5 MB each) and PDFs (up to 20 MB), and reads text files such as
 YAML, logs and JSON (up to 1 MB). Up to 10 files per message. Uploads are
 stored under the add-on's `/data/uploads` and deleted together with the chat.
 
+**Dashboard screenshots** (optional): Claude can open your dashboards in a
+headless browser inside the add-on to check that its changes render: cards
+show up, entities have values, nothing shows an error card, and the layout works
+on a phone. To turn it on:
+
+1. In Home Assistant, open your profile (bottom left) → **Security** →
+   **Long-lived access tokens** → **Create token**, and copy the token.
+2. Paste it into the add-on option **Dashboard access token** and restart the
+   add-on.
+
+Then ask for example "Add a card for the garage door to the main dashboard and
+check it looks right on mobile". The token has the rights of the user who
+created it and only ever lives in the add-on's server process. Claude and its
+shell never see it; Claude only sees the screenshots. The browser starts on
+demand and exits after 90 seconds idle.
+
 ## Configuration options
 
 | Option                        | Default  | Description                                                                                     |
@@ -70,7 +86,9 @@ stored under the add-on's `/data/uploads` and deleted together with the chat.
 | `model`                       | —        | Optional default model id/alias (e.g. `opus`, `sonnet`). Switchable per chat.                    |
 | `anthropic_base_url`          | —        | Optional. Route requests through an Anthropic-compatible gateway.                               |
 | `log_level`                   | `info`   | `debug`, `info`, `warning`, `error`.                                                            |
-| `auto_approve_readonly_tools` | `true`   | Run read-only Home Assistant tools (states, services, areas, logs, templates) and the offline YAML check without a prompt. |
+| `auto_approve_readonly_tools` | `true`   | Run read-only Home Assistant tools (states, services, areas, logs, templates, screenshots) and the offline YAML check without a prompt. |
+| `dashboard_token`             | —        | Optional long-lived access token that enables dashboard screenshots.                            |
+| `frontend_url`                | —        | Optional. Where the add-on reaches the frontend; detected automatically (`http(s)://homeassistant:8123`). |
 
 ## Safety
 

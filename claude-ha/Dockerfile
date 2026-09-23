@@ -55,7 +55,8 @@ FROM ${BUILD_FROM}
 
 # Node 22+ (Alpine 3.24 ships Node 24), git for config checkpoints, the
 # runtime libraries the Claude Code native binary needs on musl, and Python
-# with PyYAML and yamllint for offline YAML validation (ha-yaml-check).
+# with PyYAML and yamllint for offline YAML validation (ha-yaml-check), and
+# headless Chromium for dashboard screenshots (started only on demand).
 RUN apk add --no-cache \
         nodejs \
         npm \
@@ -66,6 +67,9 @@ RUN apk add --no-cache \
         python3 \
         py3-yaml \
         yamllint \
+        chromium \
+        ttf-freefont \
+        font-noto-emoji \
     && git config --system safe.directory '*' \
     && git config --system init.defaultBranch main
 
@@ -76,6 +80,7 @@ ENV \
     CLAUDE_CONFIG_DIR=/data/claude \
     # HA-tuned yamllint defaults; a .yamllint in /config still wins.
     YAMLLINT_CONFIG_FILE=/etc/yamllint/config.yaml \
+    CLAUDE_HA_CHROMIUM=/usr/bin/chromium-browser \
     HOME=/data/home \
     NODE_ENV=production \
     CLAUDE_HA_PORT=8099

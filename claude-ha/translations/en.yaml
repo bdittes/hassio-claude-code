@@ -32,3 +32,16 @@ configuration:
       When enabled, tools that only read from Home Assistant (states, services,
       areas, logs, templates) run without a permission prompt. Writes always
       follow the permission mode selected in the chat.
+  dashboard_token:
+    name: Dashboard access token
+    description: >-
+      Optional. Lets Claude take screenshots of your dashboards to check its
+      changes. In Home Assistant open your profile, go to Security, create a
+      long-lived access token and paste it here. Claude only ever sees the
+      screenshots, never the token.
+  frontend_url:
+    name: Frontend URL
+    description: >-
+      Optional. Where the add-on reaches the Home Assistant frontend for
+      screenshots. Leave empty to detect it (http or https on
+      homeassistant:8123).

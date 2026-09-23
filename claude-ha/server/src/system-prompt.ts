@@ -4,7 +4,7 @@
  */
 import type { AppConfig } from './config.js';
 
-export function buildSystemPromptAppend(config: AppConfig, extra: { haVersion?: string; gitEnabled: boolean }): string {
+export function buildSystemPromptAppend(config: AppConfig, extra: { haVersion?: string; gitEnabled: boolean; screenshots?: boolean }): string {
   return [
     '# Claude for Home Assistant',
     '',
@@ -23,6 +23,9 @@ export function buildSystemPromptAppend(config: AppConfig, extra: { haVersion?: 
     '- mcp__ha__ha_restart_core: only when a reload is not possible. It is blocked automatically if the config check fails.',
     '- mcp__ha__ha_get_logs: tail the Core log to debug errors.',
     '- mcp__ha__ha_list_secret_keys: see which !secret keys exist.',
+    extra.screenshots
+      ? '- mcp__ha__ha_screenshot: look at a frontend page (default /lovelace/0) the way the user sees it. After changing a dashboard, card or anything shown on one, reload if needed and take a screenshot to verify it renders correctly, then fix what is wrong (error cards, unavailable entities, broken layout) before reporting back. Use device=mobile as well when layout matters. Take screenshots proactively whenever the user asks why something looks wrong.'
+      : '- mcp__ha__ha_screenshot: not set up. If the user wants you to check a dashboard visually, tell them to add a long-lived access token in the add-on option "Dashboard access token" and restart the add-on.',
     'If a call ever returns "No such tool available", the tool name is wrong: use the exact `mcp__ha__` name above rather than the short name.',
     '',
     '## Rules',
