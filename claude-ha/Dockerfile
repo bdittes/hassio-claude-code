@@ -53,8 +53,9 @@ RUN NPM_CPU="$([ "$BUILD_ARCH" = "aarch64" ] && echo arm64 || echo x64)" \
 # ---------------------------------------------------------------------------
 FROM ${BUILD_FROM}
 
-# Node 22+ (Alpine 3.24 ships Node 24), git for config checkpoints, and the
-# runtime libraries the Claude Code native binary needs on musl.
+# Node 22+ (Alpine 3.24 ships Node 24), git for config checkpoints, the
+# runtime libraries the Claude Code native binary needs on musl, and Python
+# with PyYAML and yamllint for offline YAML validation (ha-yaml-check).
 RUN apk add --no-cache \
         nodejs \
         npm \
@@ -62,6 +63,9 @@ RUN apk add --no-cache \
         ripgrep \
         libgcc \
         libstdc++ \
+        python3 \
+        py3-yaml \
+        yamllint \
     && git config --system safe.directory '*' \
     && git config --system init.defaultBranch main
 
@@ -70,6 +74,8 @@ ENV \
     USE_BUILTIN_RIPGREP=0 \
     # Keep Claude Code's own state on the persistent /data volume.
     CLAUDE_CONFIG_DIR=/data/claude \
+    # HA-tuned yamllint defaults; a .yamllint in /config still wins.
+    YAMLLINT_CONFIG_FILE=/etc/yamllint/config.yaml \
     HOME=/data/home \
     NODE_ENV=production \
     CLAUDE_HA_PORT=8099

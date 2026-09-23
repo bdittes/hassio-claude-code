@@ -38,6 +38,33 @@ export const WRITE_TOOL_NAMES = ['ha_call_service', 'ha_reload', 'ha_restart_cor
 /** Fully qualified names of tools that only read state. */
 export const READ_ONLY_TOOLS = new Set(READ_ONLY_TOOL_NAMES.map(qualified));
 
+/** Offline YAML validators shipped in the image (see rootfs/usr/local/bin/ha-yaml-check). */
+const YAML_CHECK_COMMANDS = new Set(['ha-yaml-check', 'yamllint']);
+const YAML_CHECK_FLAGS = new Set(['--lint', '-q', '--quiet', '-s', '--strict', '--no-warnings']);
+
+/**
+ * True for a plain `ha-yaml-check`/`yamllint` invocation that only reads YAML
+ * inside the config directory, so it can run without a permission prompt like
+ * the read-only HA tools. Anything with shell syntax, other flags (yamllint's
+ * `-c` reads arbitrary files), absolute paths outside `configDir` or `..` is
+ * left to the normal permission flow.
+ */
+export function isReadOnlyYamlCheck(command: unknown, configDir: string): boolean {
+  if (typeof command !== 'string') return false;
+  const trimmed = command.trim();
+  if (!trimmed || !/^[A-Za-z0-9_./@+,= -]+$/.test(trimmed)) return false;
+  const [cmd, ...args] = trimmed.split(/ +/);
+  if (!YAML_CHECK_COMMANDS.has(cmd)) return false;
+  const root = path.resolve(configDir);
+  return args.every((arg) => {
+    if (arg.startsWith('-')) return YAML_CHECK_FLAGS.has(arg);
+    if (arg.split('/').includes('..')) return false;
+    if (!arg.startsWith('/')) return true;
+    const abs = path.resolve(arg);
+    return abs === root || abs.startsWith(root + path.sep);
+  });
+}
+
 const MAX_RESULT_CHARS = 60_000;
 
 function text(value: unknown): CallToolResult {

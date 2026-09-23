@@ -101,7 +101,7 @@ export class SessionStore {
     if (!s) return;
     s.items.push(item);
     if (item.kind === 'user' && s.title === 'New chat') {
-      s.title = item.text.replace(/\s+/g, ' ').trim().slice(0, 60) || 'New chat';
+      s.title = item.text.replace(/\s+/g, ' ').trim().slice(0, 60) || item.attachments?.[0]?.name.slice(0, 60) || 'New chat';
     }
     this.touch(id);
   }

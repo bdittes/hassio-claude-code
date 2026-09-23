@@ -1,0 +1,38 @@
+# yamllint defaults for a Home Assistant configuration directory.
+# Used by `yamllint` and `ha-yaml-check --lint` (via YAMLLINT_CONFIG_FILE).
+# A .yamllint file in /config takes precedence over this one.
+#
+# Tuned to accept what Home Assistant and its UI editors write: no document
+# start marker, long template lines, un-indented lists under a key, and
+# on/off as values. Real problems (syntax, duplicate keys, bad indentation,
+# trailing spaces, tabs) are still reported.
+extends: default
+
+ignore: |
+  .storage/
+  .cloud/
+  deps/
+  tts/
+  secrets.yaml
+
+rules:
+  document-start: disable
+  line-length: disable
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  indentation:
+    spaces: consistent
+    indent-sequences: whatever
+  truthy:
+    allowed-values: ["true", "false", "on", "off", "yes", "no"]
+    check-keys: false
+  new-line-at-end-of-file:
+    level: warning
+  trailing-spaces:
+    level: warning
+  empty-lines:
+    max: 2
+    level: warning
+  braces:
+    max-spaces-inside: 1

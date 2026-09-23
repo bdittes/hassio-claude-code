@@ -14,7 +14,10 @@ import {
   CircleHelp,
   Info,
   Lightbulb,
+  Loader2,
   Menu,
+  Paperclip,
+  FileText,
   MessageSquarePlus,
   MessageSquareText,
   Pencil,
@@ -39,14 +42,17 @@ import {
   renameSession,
   respondPermission,
   answerQuestion,
+  attachmentUrl,
   revertSession,
+  pushError,
+  uploadFile,
   selectSession,
   sendMessage,
   setModel,
   setPermissionMode,
   state,
 } from './store';
-import type { PermissionModeUi, QuestionRequest, TranscriptItem } from '../../server/src/protocol';
+import type { Attachment, PermissionModeUi, QuestionRequest, TranscriptItem } from '../../server/src/protocol';
 
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -128,11 +134,108 @@ const examples = [
   'Check my configuration for errors',
 ];
 
+// Files attached to the message being composed. Each uploads as soon as it is
+// added; the message only references the ids once they are all done.
+interface PendingFile {
+  key: number;
+  name: string;
+  size: number;
+  isImage: boolean;
+  preview?: string;
+  status: 'uploading' | 'ready' | 'error';
+  attachment?: Attachment;
+}
+const MAX_FILES = 10;
+const pendingFiles = ref<PendingFile[]>([]);
+const fileInput = ref<HTMLInputElement | null>(null);
+const dragging = ref(false);
+let fileSeq = 0;
+const ACCEPT =
+  'image/png,image/jpeg,image/gif,image/webp,application/pdf,text/*,.yaml,.yml,.json,.log,.txt,.md,.csv,.xml,.conf,.ini,.toml,.js,.py,.sh,.jinja,.j2';
+
+const uploading = computed(() => pendingFiles.value.some((f) => f.status === 'uploading'));
+const readyFiles = computed(() => pendingFiles.value.filter((f) => f.status === 'ready' && f.attachment));
+const canSend = computed(() => (!!draft.value.trim() || readyFiles.value.length > 0) && !uploading.value && !busy.value);
+
+function formatSize(n: number): string {
+  return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.ceil(n / 1024))} KB`;
+}
+
+/** Clipboard screenshots all arrive as "image.png"; give them a useful name. */
+function pastedName(file: File): string {
+  if (file.name && file.name !== 'image.png') return file.name;
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, '0');
+  const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
+  return `screenshot-${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.${ext}`;
+}
+
+function addFiles(files: Iterable<File>, pasted = false) {
+  for (const file of files) {
+    if (pendingFiles.value.length >= MAX_FILES) {
+      pushError(`At most ${MAX_FILES} files per message.`);
+      break;
+    }
+    const name = pasted ? pastedName(file) : file.name;
+    const isImage = file.type.startsWith('image/');
+    const entry = reactive<PendingFile>({
+      key: ++fileSeq,
+      name,
+      size: file.size,
+      isImage,
+      preview: isImage ? URL.createObjectURL(file) : undefined,
+      status: 'uploading',
+    });
+    pendingFiles.value.push(entry);
+    uploadFile(file, name)
+      .then((att) => {
+        entry.attachment = att;
+        entry.status = 'ready';
+      })
+      .catch((err: Error) => {
+        pushError(err.message);
+        removeFile(entry.key);
+      });
+  }
+}
+
+function removeFile(key: number) {
+  const i = pendingFiles.value.findIndex((f) => f.key === key);
+  if (i < 0) return;
+  const [f] = pendingFiles.value.splice(i, 1);
+  if (f.preview) URL.revokeObjectURL(f.preview);
+}
+
+function onFilePicked(e: Event) {
+  const input = e.target as HTMLInputElement;
+  if (input.files) addFiles([...input.files]);
+  input.value = '';
+}
+
+function onPaste(e: ClipboardEvent) {
+  const files = [...(e.clipboardData?.files ?? [])];
+  if (!files.length) return;
+  e.preventDefault();
+  addFiles(files, true);
+}
+
+function onDrop(e: DragEvent) {
+  dragging.value = false;
+  const files = [...(e.dataTransfer?.files ?? [])];
+  if (files.length) addFiles(files);
+}
+
+function onDragOver(e: DragEvent) {
+  if (e.dataTransfer?.types.includes('Files')) dragging.value = true;
+}
+
 function submit() {
+  if (!canSend.value) return;
   const text = draft.value.trim();
-  if (!text) return;
-  sendMessage(text);
+  sendMessage(text, readyFiles.value.map((f) => f.attachment!.id));
   draft.value = '';
+  for (const f of pendingFiles.value) if (f.preview) URL.revokeObjectURL(f.preview);
+  pendingFiles.value = [];
 }
 function useExample(text: string) {
   sendMessage(text);
@@ -357,8 +460,36 @@ connect();
         <template v-if="currentView && currentView.items.length">
           <div class="mx-auto flex max-w-3xl flex-col gap-5">
             <template v-for="item in currentView.items" :key="item.id">
-              <div v-if="item.kind === 'user'" class="flex animate-message-in justify-end">
-                <div class="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground shadow-sm sm:max-w-[75%]">
+              <div v-if="item.kind === 'user'" class="flex animate-message-in flex-col items-end gap-1.5">
+                <div v-if="item.attachments?.length" class="flex max-w-[85%] flex-wrap items-end justify-end gap-1.5 sm:max-w-[75%]">
+                  <template v-for="a in item.attachments" :key="a.id">
+                    <a
+                      v-if="a.kind === 'image'"
+                      :href="attachmentUrl(a.id)"
+                      target="_blank"
+                      rel="noopener"
+                      class="block overflow-hidden rounded-xl border bg-muted shadow-sm"
+                      :title="a.name"
+                    >
+                      <img :src="attachmentUrl(a.id)" :alt="a.name" class="max-h-48 max-w-64 object-contain" loading="lazy" />
+                    </a>
+                    <a
+                      v-else
+                      :href="attachmentUrl(a.id)"
+                      :download="a.name"
+                      class="flex max-w-64 items-center gap-2 rounded-xl border bg-card px-3 py-2 text-sm shadow-sm hover:bg-accent"
+                      :title="a.name"
+                    >
+                      <FileText class="size-4 shrink-0 text-muted-foreground" />
+                      <span class="truncate">{{ a.name }}</span>
+                      <span class="shrink-0 text-xs text-muted-foreground">{{ formatSize(a.size) }}</span>
+                    </a>
+                  </template>
+                </div>
+                <div
+                  v-if="item.text"
+                  class="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-primary-foreground shadow-sm sm:max-w-[75%]"
+                >
                   {{ item.text }}
                 </div>
               </div>
@@ -607,16 +738,61 @@ connect();
       <!-- Composer -->
       <div class="px-3 pb-3 sm:px-4 sm:pb-4">
         <div class="mx-auto w-full max-w-3xl">
-          <div class="rounded-2xl border bg-muted/40 shadow-sm transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/25">
+          <div
+            class="rounded-2xl border bg-muted/40 shadow-sm transition-colors focus-within:border-ring/60 focus-within:ring-2 focus-within:ring-ring/25"
+            :class="dragging && 'border-primary ring-2 ring-primary/30'"
+            @dragover.prevent="onDragOver"
+            @dragleave.self="dragging = false"
+            @drop.prevent="onDrop"
+          >
+            <div v-if="pendingFiles.length" class="flex flex-wrap gap-2 px-3 pt-3">
+              <div
+                v-for="f in pendingFiles"
+                :key="f.key"
+                class="group relative flex h-14 items-center overflow-hidden rounded-lg border bg-card text-sm shadow-xs"
+                :title="f.name"
+              >
+                <img v-if="f.preview" :src="f.preview" :alt="f.name" class="h-full w-14 object-cover" />
+                <div v-else class="flex max-w-48 items-center gap-2 px-3">
+                  <FileText class="size-4 shrink-0 text-muted-foreground" />
+                  <div class="min-w-0">
+                    <div class="truncate">{{ f.name }}</div>
+                    <div class="text-xs text-muted-foreground">{{ formatSize(f.size) }}</div>
+                  </div>
+                </div>
+                <div v-if="f.status === 'uploading'" class="absolute inset-0 grid place-items-center bg-background/60">
+                  <Loader2 class="size-4 animate-spin" />
+                </div>
+                <button
+                  type="button"
+                  class="absolute right-0.5 top-0.5 grid size-5 place-items-center rounded-full bg-background/90 text-muted-foreground shadow-sm hover:text-foreground"
+                  title="Remove"
+                  @click="removeFile(f.key)"
+                >
+                  <X class="size-3" />
+                </button>
+              </div>
+            </div>
             <Textarea
               v-model="draft"
               :rows="1"
               placeholder="Ask Claude about your Home Assistant setup…"
               class="min-h-[52px] max-h-52 resize-none border-0 bg-transparent px-4 pt-3.5 text-base shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
               @keydown="onKey"
+              @paste="onPaste"
             />
             <div class="flex items-center gap-1 px-2.5 pb-2.5">
               <div class="flex min-w-0 flex-1 items-center gap-1">
+                <input ref="fileInput" type="file" multiple :accept="ACCEPT" class="hidden" @change="onFilePicked" />
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  class="size-8 shrink-0 text-muted-foreground"
+                  title="Attach screenshots or files"
+                  @click="fileInput?.click()"
+                >
+                  <Paperclip class="size-4" />
+                </Button>
                 <Select :model-value="currentModel" @update:model-value="onModelChange">
                   <SelectTrigger
                     size="sm"
@@ -656,7 +832,7 @@ connect();
                 <Button
                   size="icon"
                   class="size-9 rounded-full transition-transform active:scale-95 disabled:opacity-40"
-                  :disabled="!draft.trim() || busy"
+                  :disabled="!canSend"
                   title="Send"
                   @click="submit"
                 >
@@ -665,7 +841,7 @@ connect();
               </div>
             </div>
           </div>
-          <p class="mt-1.5 text-center text-[11px] text-muted-foreground">Enter to send · Shift + Enter for a new line</p>
+          <p class="mt-1.5 text-center text-[11px] text-muted-foreground">Enter to send · Shift + Enter for a new line · Paste or drop screenshots and files</p>
         </div>
       </div>
     </main>
