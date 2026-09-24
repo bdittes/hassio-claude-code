@@ -12,7 +12,7 @@ ARG BUILD_FROM=ghcr.io/home-assistant/base:3.24
 # ---------------------------------------------------------------------------
 # UI build
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:22-alpine AS ui-build
+FROM node:22-alpine AS ui-build
 WORKDIR /build/ui
 COPY ui/package.json ui/package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -26,7 +26,7 @@ RUN npm run build
 # Server build (TypeScript -> JavaScript). Optional native CLI binaries are
 # skipped here; the runtime stage installs the one matching the target arch.
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:22-alpine AS server-build
+FROM node:22-alpine AS server-build
 WORKDIR /build/server
 COPY server/package.json server/package-lock.json ./
 RUN npm ci --no-audit --no-fund --omit=optional
@@ -39,7 +39,7 @@ RUN npm run build
 # matching @anthropic-ai/claude-agent-sdk-linux-<arch>-musl prebuilt is pulled
 # without running an emulated node (which SIGILLs under QEMU for aarch64).
 # ---------------------------------------------------------------------------
-FROM --platform=$BUILDPLATFORM node:22-alpine AS deps
+FROM node:22-alpine AS deps
 ARG BUILD_ARCH
 WORKDIR /deps
 COPY server/package.json server/package-lock.json ./
