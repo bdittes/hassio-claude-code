@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.8
+
+- Update the Claude Agent SDK to 0.3.281, which bundles Claude Code 2.1.281.
+  This adds Claude Opus 5.5 (`claude-opus-5-5`) to the model picker; it is
+  also what the `opus` alias now resolves to. The previous SDK (0.3.263)
+  predates Opus 5.5, so it could not be selected.
+
 ## 0.1.7
 
 - Attach screenshots and files to a message: paste a screenshot straight into
