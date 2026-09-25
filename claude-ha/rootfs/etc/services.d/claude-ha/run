@@ -59,8 +59,13 @@ export CLAUDE_HA_CONFIG_DIR=/config
 export CLAUDE_HA_DATA_DIR=/data
 export CLAUDE_HA_PORT="${CLAUDE_HA_PORT:-8099}"
 
+# The add-on version from config.yaml, shown in the UI. server/package.json
+# carries its own version that nothing bumps at release.
+export CLAUDE_HA_VERSION
+CLAUDE_HA_VERSION=$(bashio::addon.version)
+
 # Identify this integration in the Agent SDK User-Agent.
-export CLAUDE_AGENT_SDK_CLIENT_APP="claude-ha/$(bashio::addon.version)"
+export CLAUDE_AGENT_SDK_CLIENT_APP="claude-ha/${CLAUDE_HA_VERSION}"
 
 # Disable Claude Code's own telemetry-ish extras that make no sense in an add-on.
 export DISABLE_AUTOUPDATER=1

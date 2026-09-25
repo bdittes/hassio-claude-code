@@ -8,6 +8,8 @@
   current reply. The chat stays marked as busy until every queued message has
   been handled. Turn the new `send_while_working` option off to keep the old
   behaviour.
+- The version in the sidebar footer is the add-on's own version. It showed
+  v0.1.0, the server package's version, which nothing bumps at release.
 
 ## 0.1.8
 

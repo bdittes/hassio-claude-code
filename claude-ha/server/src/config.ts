@@ -40,7 +40,14 @@ export interface AppConfig {
   version: string;
 }
 
+/**
+ * The add-on version from config.yaml, which the run script exports. The
+ * package.json fallback is only right in local development, where there is no
+ * Supervisor to ask.
+ */
 function readVersion(): string {
+  const fromAddon = process.env.CLAUDE_HA_VERSION?.trim();
+  if (fromAddon && fromAddon !== 'null') return fromAddon;
   try {
     const pkg = JSON.parse(
       fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
