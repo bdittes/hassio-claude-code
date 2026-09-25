@@ -34,6 +34,8 @@ export interface AppConfig {
   supervisorToken: string;
   supervisorUrl: string;
   autoApproveReadOnly: boolean;
+  /** Accept a message while a turn is running; the CLI queues it. */
+  sendWhileWorking: boolean;
   /** Extra directory the agent may access read-only (ssl certificates). */
   version: string;
 }
@@ -90,6 +92,7 @@ export function loadConfig(): AppConfig {
     supervisorToken: process.env.SUPERVISOR_TOKEN ?? '',
     supervisorUrl: process.env.SUPERVISOR_URL ?? 'http://supervisor',
     autoApproveReadOnly: envBool('CLAUDE_HA_AUTO_APPROVE_READONLY', true),
+    sendWhileWorking: envBool('CLAUDE_HA_SEND_WHILE_WORKING', true),
     version: readVersion(),
   };
 }

@@ -71,6 +71,7 @@ stored under the add-on's `/data/uploads` and deleted together with the chat.
 | `anthropic_base_url`          | —        | Optional. Route requests through an Anthropic-compatible gateway.                               |
 | `log_level`                   | `info`   | `debug`, `info`, `warning`, `error`.                                                            |
 | `auto_approve_readonly_tools` | `true`   | Run read-only Home Assistant tools (states, services, areas, logs, templates) and the offline YAML check without a prompt. |
+| `send_while_working`          | `true`   | Allow sending while Claude is working; it reads the message at its next step or right after finishing. Off: wait for the reply. |
 
 ## Safety
 

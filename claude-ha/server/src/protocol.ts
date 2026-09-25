@@ -166,6 +166,8 @@ export interface Settings {
   model: string;
   baseUrl: string;
   autoApproveReadOnly: boolean;
+  /** The composer may send while a turn is running. */
+  sendWhileWorking: boolean;
   /** Legacy name: true when any credential source is configured. */
   hasApiKey: boolean;
   auth: AuthStatus;

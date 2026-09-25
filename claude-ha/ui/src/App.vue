@@ -155,7 +155,12 @@ const ACCEPT =
 
 const uploading = computed(() => pendingFiles.value.some((f) => f.status === 'uploading'));
 const readyFiles = computed(() => pendingFiles.value.filter((f) => f.status === 'ready' && f.attachment));
-const canSend = computed(() => (!!draft.value.trim() || readyFiles.value.length > 0) && !uploading.value && !busy.value);
+// With send_while_working on, the CLI folds a message sent mid-turn into the
+// running turn at its next tool call, or runs it right after the turn ends.
+const queueing = computed(() => busy.value && state.settings?.sendWhileWorking !== false);
+const canSend = computed(
+  () => (!!draft.value.trim() || readyFiles.value.length > 0) && !uploading.value && (!busy.value || queueing.value),
+);
 
 function formatSize(n: number): string {
   return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.ceil(n / 1024))} KB`;
@@ -776,7 +781,7 @@ connect();
             <Textarea
               v-model="draft"
               :rows="1"
-              placeholder="Ask Claude about your Home Assistant setup…"
+              :placeholder="queueing ? 'Add to what Claude is doing…' : 'Ask Claude about your Home Assistant setup…'"
               class="min-h-[52px] max-h-52 resize-none border-0 bg-transparent px-4 pt-3.5 text-base shadow-none focus-visible:border-0 focus-visible:ring-0 dark:bg-transparent"
               @keydown="onKey"
               @paste="onPaste"
@@ -833,7 +838,7 @@ connect();
                   size="icon"
                   class="size-9 rounded-full transition-transform active:scale-95 disabled:opacity-40"
                   :disabled="!canSend"
-                  title="Send"
+                  :title="queueing ? 'Send: Claude reads it at its next step' : 'Send'"
                   @click="submit"
                 >
                   <ArrowUp class="size-5" />

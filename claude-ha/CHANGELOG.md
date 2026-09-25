@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.9
+
+- Send messages while Claude is working. The message box used to lock until
+  the reply finished; now a message sent mid-turn is picked up at Claude's
+  next step (for example, between two tool calls) or runs right after the
+  current reply. The chat stays marked as busy until every queued message has
+  been handled. Turn the new `send_while_working` option off to keep the old
+  behaviour.
+
 ## 0.1.8
 
 - Update the Claude Agent SDK to 0.3.281, which bundles Claude Code 2.1.281.

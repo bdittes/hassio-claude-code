@@ -32,3 +32,9 @@ configuration:
       When enabled, tools that only read from Home Assistant (states, services,
       areas, logs, templates) run without a permission prompt. Writes always
       follow the permission mode selected in the chat.
+  send_while_working:
+    name: Send messages while Claude is working
+    description: >-
+      When enabled, you can keep typing while Claude works. Claude reads the
+      new message at its next step, or right after it finishes. Turn off to
+      block sending until the current reply is done.
