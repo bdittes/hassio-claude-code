@@ -1,7 +1,7 @@
 # Home Assistant add-on manifest.
 # Reference: https://developers.home-assistant.io/docs/apps/configuration
 name: Claude for Home Assistant
-version: 0.1.9
+version: 0.1.9.1
 slug: claude_ha
 description: Chat with Claude to read, edit and validate your Home Assistant configuration
 url: https://github.com/tormjens/hassio-claude-code
@@ -9,7 +9,7 @@ arch:
   - amd64
   - aarch64
 # ha-local branch: no `image:`, so Supervisor builds the add-on on the device
-# instead of pulling upstream's prebuilt image, which has no 0.1.8 tag yet.
+# instead of pulling upstream's prebuilt image, which has no tag for our versions.
 # The HA base image ships s6-overlay v3, which must run as PID 1.
 init: false
 startup: application

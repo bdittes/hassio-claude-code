@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.9.1 (ha-local fork build)
+
+- 0.1.9 as proposed upstream, built on the device rather than pulled.
+
 ## 0.1.9
 
 - Send messages while Claude is working. The message box used to lock until
