@@ -118,6 +118,28 @@ const UI_TO_SDK_MODE: Record<PermissionModeUi, PermissionMode> = {
   plan: 'plan',
 };
 
+/**
+ * Drop the messages a finished turn consumed from the set still waiting to run.
+ *
+ * A message sent while Claude is working is queued by the CLI: it is folded into
+ * the running turn at the next tool boundary, or runs as its own turn right after
+ * this one. The result lists every uuid the turn took, so whatever is left will
+ * start another turn and the session is not idle yet. A CLI that does not report
+ * the list is treated as having consumed everything, which only risks showing
+ * idle early; the next turn's first stream event marks the session busy again.
+ */
+export function settleQueued(
+  queued: Set<string>,
+  result: { user_message_uuid?: string; user_message_uuids?: string[] },
+): void {
+  const consumed = result.user_message_uuids ?? (result.user_message_uuid ? [result.user_message_uuid] : undefined);
+  if (!consumed) {
+    queued.clear();
+    return;
+  }
+  for (const id of consumed) queued.delete(id);
+}
+
 /** Minimal pushable async iterable used as the SDK's streaming prompt. */
 class AsyncQueue<T> implements AsyncIterable<T> {
   private items: T[] = [];
@@ -173,6 +195,8 @@ export class SessionRuntime {
     { request: QuestionRequest; resolve: (r: PermissionResult) => void }
   >();
   private consuming: Promise<void> | undefined;
+  /** Uuids of sent user messages no turn has consumed yet. See settleQueued. */
+  private readonly queued = new Set<string>();
 
   constructor(
     private readonly session: StoredSession,
@@ -304,9 +328,12 @@ export class SessionRuntime {
   async send(text: string, attachments: PreparedAttachment[] = []): Promise<void> {
     const trimmed = text.trim();
     if (!trimmed && !attachments.length) return;
+    // One id for the transcript item and the SDK message, so the result's
+    // user_message_uuids can be matched back to what is still queued.
+    const uuid = randomUUID();
     this.appendItem({
       kind: 'user',
-      id: randomUUID(),
+      id: uuid,
       ts: Date.now(),
       text: trimmed,
       ...(attachments.length ? { attachments: attachments.map((a) => a.meta) } : {}),
@@ -317,8 +344,10 @@ export class SessionRuntime {
     const content = attachments.length
       ? [...attachments.map((a) => a.block), ...(trimmed ? [{ type: 'text' as const, text: trimmed }] : [])]
       : trimmed;
+    this.queued.add(uuid);
     this.input?.push({
       type: 'user',
+      uuid,
       message: { role: 'user', content },
       parent_tool_use_id: null,
       session_id: this.session.sdkSessionId ?? '',
@@ -501,6 +530,7 @@ export class SessionRuntime {
         this.input = undefined;
       }
       this.finishOpenItems();
+      this.queued.clear();
       this.setStatus('idle');
     }
   }
@@ -632,6 +662,8 @@ export class SessionRuntime {
     switch (event.type) {
       case 'message_start':
         this.blockItems.clear();
+        // A queued message running as its own turn after a result went idle.
+        if (this.status === 'idle') this.setStatus('running');
         break;
       case 'content_block_start': {
         const index = event.index as number;
@@ -790,7 +822,8 @@ export class SessionRuntime {
       this.note('error', message.errors.join('\n'));
     }
     this.emitSession();
-    if (this.pending.size === 0) this.setStatus('idle');
+    settleQueued(this.queued, message);
+    if (this.pending.size === 0 && this.queued.size === 0) this.setStatus('idle');
   }
 
   private findItem(id: string): TranscriptItem | undefined {

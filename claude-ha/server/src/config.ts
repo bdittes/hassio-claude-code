@@ -34,11 +34,20 @@ export interface AppConfig {
   supervisorToken: string;
   supervisorUrl: string;
   autoApproveReadOnly: boolean;
+  /** Accept a message while a turn is running; the CLI queues it. */
+  sendWhileWorking: boolean;
   /** Extra directory the agent may access read-only (ssl certificates). */
   version: string;
 }
 
+/**
+ * The add-on version from config.yaml, which the run script exports. The
+ * package.json fallback is only right in local development, where there is no
+ * Supervisor to ask.
+ */
 function readVersion(): string {
+  const fromAddon = process.env.CLAUDE_HA_VERSION?.trim();
+  if (fromAddon && fromAddon !== 'null') return fromAddon;
   try {
     const pkg = JSON.parse(
       fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
@@ -90,6 +99,7 @@ export function loadConfig(): AppConfig {
     supervisorToken: process.env.SUPERVISOR_TOKEN ?? '',
     supervisorUrl: process.env.SUPERVISOR_URL ?? 'http://supervisor',
     autoApproveReadOnly: envBool('CLAUDE_HA_AUTO_APPROVE_READONLY', true),
+    sendWhileWorking: envBool('CLAUDE_HA_SEND_WHILE_WORKING', true),
     version: readVersion(),
   };
 }

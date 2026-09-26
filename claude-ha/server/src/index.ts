@@ -124,6 +124,7 @@ function settings(): Settings {
     model: config.model,
     baseUrl: config.anthropicBaseUrl,
     autoApproveReadOnly: config.autoApproveReadOnly,
+    sendWhileWorking: config.sendWhileWorking,
     hasApiKey: hasCredentials(),
     auth: authStatus(),
     models: availableModels,
@@ -347,6 +348,12 @@ wss.on('connection', async (ws) => {
           }
           const rt = sessions.get(msg.sessionId);
           if (!rt) throw new Error('Unknown session');
+          // The UI already disables sending; this covers a second open tab
+          // or a client that predates the setting.
+          if (!config.sendWhileWorking && rt.status !== 'idle') {
+            send(ws, { type: 'error', sessionId: msg.sessionId, message: 'Claude is still working. Wait for the reply, or stop it first.' });
+            break;
+          }
           subscribe(msg.sessionId);
           const attachments = await uploads.prepare(msg.attachments);
           await rt.send(msg.text ?? '', attachments);
