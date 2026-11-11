@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.13.1 (ha-local fork build)
+
+- 0.1.13, built on the device rather than pulled.
+
 ## 0.1.13
 
 - The chat now follows along while Claude is thinking or writing, instead of
