@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.13.2 (ha-local fork build)
+
+- A chat left alone for ten minutes stops its Claude Code process, which held
+  a few hundred MB of memory for as long as the add-on ran; the next message
+  starts it again on the same conversation, a few seconds slower to begin.
+  The new `idle_sleep_minutes` option sets the wait; `0` keeps the old
+  behaviour.
+
 ## 0.1.13.1 (ha-local fork build)
 
 - 0.1.13, built on the device rather than pulled.
