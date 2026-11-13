@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.15.1 (ha-local fork build)
+
+- 0.1.15, built on the device rather than pulled.
+
 ## 0.1.15
 
 - Fix a message sent just as an idle chat was being put to sleep: the old
